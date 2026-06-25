@@ -18,7 +18,7 @@ This project simulates a lightweight IGA (Identity Governance and Administration
 
 1. Clone this repository:
    ```bash
-   git clone [https://github.com/IvanMaiaAlves/identity-governance-automation.git](https://github.com/IvanMaiaAlves/identity-governance-automation.git)
+   git clone [https://github.com/IvanMaiaAlves/identity-governance-automation.git]
 
 Install the required dependencies:
 
