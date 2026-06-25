@@ -1,114 +1,107 @@
 import pandas as pd
 from datetime import datetime
-import os
 
-# Função para registrar os logs com carimbo de data/hora
-def registrar_log(mensagem):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    texto_log = f"[{timestamp}] {mensagem}"
-    print(texto_log)
-    with open("log_auditoria.txt", "a", encoding="utf-8") as f:
-        f.write(texto_log + "\n")
+# Function to record logs in a text file and print to the terminal
+def record_log(message):
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_line = f"[{timestamp}] {message}\n"
+    print(f"[{timestamp}] {message}")
+    with open("audit_log.txt", "a", encoding="utf-8") as f:
+        f.write(log_line)
 
-# ==================================================
-#          INICIALIZAÇÃO DO SCRIPT
-# ==================================================
-registrar_log("==================================================")
-registrar_log("      INICIANDO AUDITORIA DE SEGURANÇA (IGA)      ")
-registrar_log("==================================================")
+record_log("=" * 50)
+record_log("       STARTING IDENTITY AUDIT (IGA)       ")
+record_log("=" * 50)
 
-# 1. CARREGAR DADOS DO RH (CSV)
+# 1. LOAD DATASETS
 try:
-    df_rh = pd.read_csv("rh_funcionarios.csv")
-    registrar_log("[INFO] Dados do RH carregados com sucesso.")
+    df_rh = pd.read_csv("hr_data.csv")
+    record_log("[INFO] HR data loaded successfully.")
 except Exception as e:
-    registrar_log(f"🚨 [ERRO CRÍTICO] Falha ao carregar rh_funcionarios.csv: {e}")
+    record_log(f"🚨 [ERROR] Failed to load HR data (hr_data.csv): {e}")
     exit()
 
-# 2. CARREGAR DADOS DA NUVEM (JSON)
 try:
-    df_nuvem = pd.read_json("nuvem_teste.json")
-    registrar_log("[INFO] Dados da Nuvem carregados com sucesso.")
+    df_cloud = pd.read_json("cloud_data.json")
+    record_log("[INFO] Cloud data loaded successfully.")
 except Exception as e:
-    registrar_log(f"🚨 [ERRO CRÍTICO] Falha ao carregar nuvem_teste.json: {e}")
+    record_log(f"🚨 [ERROR] Failed to load Cloud data (cloud_data.json): {e}")
     exit()
 
-# 3. CRUZAR OS DADOS (CONCILIAÇÃO) E PROCURAR ANOMALIAS
+# 2. DATA RECONCILIATION AND ANOMALY DETECTION
 try:
-    # Garante que os IDs sejam lidos como texto e sem espaços para não falhar no cruzamento
-    df_nuvem["id_usuario"] = df_nuvem["id_usuario"].astype(str).str.strip()
+    # Standardize IDs to avoid mismatching due to whitespaces
+    df_cloud["id_usuario"] = df_cloud["id_usuario"].astype(str).str.strip()
     df_rh["id"] = df_rh["id"].astype(str).str.strip()
 
-    # Junta as tabelas
-    df_consolidado = pd.merge(df_nuvem, df_rh, left_on="id_usuario", right_on="id")
+    # Merge datasets based on IDs
+    df_consolidated = pd.merge(df_cloud, df_rh, left_on="id_usuario", right_on="id")
     
-    # --- FILTRO 1: CONTAS FANTASMA (Demitidos com acesso ativo) ---
-    contas_fantasma = df_consolidado[df_consolidado["status"].str.strip() == "Demitido"]
+    # --- FILTER 1: GHOST ACCOUNTS (Terminated employees with active access) ---
+    ghost_accounts = df_consolidated[df_consolidated["status"].str.strip() == "Demitido"]
     
-    if not contas_fantasma.empty:
-        registrar_log(f"🚨 [ALERTA CRÍTICO] {len(contas_fantasma)} CONTAS FANTASMA DETECTADAS!")
-        # Criando uma cópia limpa para o Excel
-        relatorio_fantasma = contas_fantasma[['id_usuario', 'email', 'permissao', 'status']].copy()
-        relatorio_fantasma.to_excel("relatorio_contas_fantasma.xlsx", index=False)
-        registrar_log("✅ Relatório 'relatorio_contas_fantasma.xlsx' gerado com dados.")
+    if not ghost_accounts.empty:
+        record_log(f"🚨 [CRITICAL ALERT] {len(ghost_accounts)} GHOST ACCOUNTS DETECTED!")
+        report_ghost = ghost_accounts[['id_usuario', 'email', 'permissao', 'status']].copy()
+        report_ghost.to_excel("ghost_accounts_report.xlsx", index=False)
+        record_log("✅ 'ghost_accounts_report.xlsx' generated with data.")
     else:
-        registrar_log("✅ Nenhuma conta fantasma detectada.")
+        record_log("✅ No ghost accounts detected.")
 
-    # --- FILTRO 2: AUDITORIA DE IDADE DE CHAVES (Access Review) ---
-    registrar_log("[INFO] Analisando conformidade de tempo das chaves de acesso (Limite: 90 dias)...")
+    # --- FILTER 2: ACCESS KEY AGE REVIEW (Credential Compliance) ---
+    record_log("[INFO] Analyzing access key age compliance (Limit: 90 days)...")
     
-    data_atual = datetime.now()
-    chaves_expiradas = []
+    current_date = datetime.now()
+    expired_keys = []
 
-    for index, linha in df_consolidado.iterrows():
+    for index, row in df_consolidated.iterrows():
         try:
-            data_chave = datetime.strptime(str(linha["data_criacao_chave"]).strip(), "%Y-%m-%d")
-            idade_dias = (data_atual - data_chave).days
+            key_date = datetime.strptime(str(row["data_criacao_chave"]).strip(), "%Y-%m-%d")
+            age_days = (current_date - key_date).days
             
-            if idade_dias > 90:
-                registrar_log(f"⚠️ [VULNERABILIDADE] Usuário {linha['email']} usando chave antiga há {idade_dias} dias!")
-                chaves_expiradas.append({
-                    "id_usuario": linha["id_usuario"],
-                    "email": linha["email"],
-                    "idade_chave_dias": idade_dias,
-                    "permissao": linha["permissao"]
+            if age_days > 90:
+                record_log(f"⚠️ [VULNERABILITY] User {row['email']} is using a stale key ({age_days} days old)!")
+                expired_keys.append({
+                    "user_id": row["id_usuario"],
+                    "email": row["email"],
+                    "key_age_days": age_days,
+                    "permission": row["permissao"]
                 })
         except Exception as e:
             pass
 
-    if chaves_expiradas:
-        df_expiradas = pd.DataFrame(chaves_expiradas)
-        df_expiradas.to_excel("relatorio_chaves_obsoletas.xlsx", index=False)
-        registrar_log(f"🚨 [ALERTA] {len(chaves_expiradas)} chaves obsoletas salvas em 'relatorio_chaves_obsoletas.xlsx'.")
+    if expired_keys:
+        df_expired = pd.DataFrame(expired_keys)
+        df_expired.to_excel("stale_keys_report.xlsx", index=False)
+        record_log(f"🚨 [ALERT] {len(expired_keys)} stale keys saved to 'stale_keys_report.xlsx'.")
     else:
-        registrar_log("✅ 100% das chaves de acesso estão dentro do prazo.")
+        record_log("✅ 100% of access keys are compliant.")
 
-    # --- FILTRO 3: ANÁLISE DE SEGREGAÇÃO DE FUNÇÕES (SoD) ---
-    registrar_log("[INFO] Verificando conflitos de Segregação de Funções (SoD)...")
+    # --- FILTER 3: SEGREGATION OF DUTIES (SoD) ANALYSIS ---
+    record_log("[INFO] Checking for Segregation of Duties (SoD) conflicts...")
     
-    conflitos_sod = []
+    sod_conflicts = []
     
-    for index, linha in df_consolidado.iterrows():
-        permissoes_usuario = str(linha["permissao"])
+    for index, row in df_consolidated.iterrows():
+        user_permissions = str(row["permissao"])
         
-        if "Admin" in permissoes_usuario and "Auditor" in permissoes_usuario:
-            registrar_log(f"🚨 [VIOLAÇÃO DE SOD] Usuário {linha['email']} possui acessos conflitantes: {permissoes_usuario}!")
-            conflitos_sod.append({
-                "id_usuario": linha["id_usuario"],
-                "email": linha["email"],
-                "conflito_detectado": "Admin + Auditor (Risco de Fraude/Ocultação)",
-                "permissoes_atuais": permissoes_usuario
+        if "Admin" in user_permissions and "Auditor" in user_permissions:
+            record_log(f"🚨 [SoD VIOLATION] User {row['email']} has conflicting privileges: {user_permissions}!")
+            sod_conflicts.append({
+                "user_id": row["id_usuario"],
+                "email": row["email"],
+                "conflict_detected": "Admin + Auditor (Fraud / Concealment Risk)",
+                "current_permissions": user_permissions
             })
             
-    if __name__ == '__main__' or True: # Força a execução segura
-        if conflitos_sod:
-            df_sod = pd.DataFrame(conflitos_sod)
-            df_sod.to_excel("relatorio_violacao_sod.xlsx", index=False)
-            registrar_log(f"🚨 [ALERTA] {len(conflitos_sod)} violações de SoD salvas em 'relatorio_violacao_sod.xlsx'.")
-        else:
-            registrar_log("✅ Nenhum conflito de SoD encontrado.")
+    if sod_conflicts:
+        df_sod = pd.DataFrame(sod_conflicts)
+        df_sod.to_excel("sod_violations_report.xlsx", index=False)
+        record_log(f"🚨 [ALERT] {len(sod_conflicts)} SoD violations saved to 'sod_violations_report.xlsx'.")
+    else:
+        record_log("✅ No Segregation of Duties (SoD) conflicts found.")
 
 except Exception as e:
-    registrar_log(f"🚨 [ERRO] Falha inesperada no processamento dos dados: {e}")
+    record_log(f"🚨 [ERROR] Unexpected data processing failure: {e}")
 
-registrar_log("================ AUDITORIA FINALIZADA ================")
+record_log("================ AUDIT PROCESS FINISHED ================")
