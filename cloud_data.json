@@ -1,0 +1,20 @@
+[
+  {
+    "id_usuario": "F01",
+    "email": "ana@empresa.com",
+    "permissao": "Admin",
+    "data_criacao_chave": "2026-01-10"
+  },
+  {
+    "id_usuario": "F02",
+    "email": "bruno@empresa.com",
+    "permissao": "Leitura",
+    "data_criacao_chave": "2026-05-20"
+  },
+  {
+    "id_usuario": "F03",
+    "email": "carlos@empresa.com",
+    "permissao": "Admin,Auditor",
+    "data_criacao_chave": "2026-02-15"
+  }
+]
